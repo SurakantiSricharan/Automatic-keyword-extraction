@@ -1,1 +1,1 @@
-﻿web: gunicorn --chdir Kewords app:app --bind 0.0.0.0:$PORT
+﻿web: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4

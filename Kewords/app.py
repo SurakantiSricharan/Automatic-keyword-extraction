@@ -1,44 +1,39 @@
-#cd Kewords
-#python app.py
 import pickle
 import os
-from flask import Flask, render_template, request
 import re
+from flask import Flask, render_template, request
+from sklearn.feature_extraction.text import CountVectorizer
 import nltk
 from nltk.stem.wordnet import WordNetLemmatizer
 from nltk.corpus import stopwords
 
 app = Flask(__name__)
 
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, 'models')
-
 
 def load_pickle(filename):
     filepath = os.path.join(MODELS_DIR, filename)
     if not os.path.exists(filepath):
-        raise FileNotFoundError(f"Missing file: {filepath}")
+        # Fallback to base dir if not in models/
+        filepath = os.path.join(BASE_DIR, filename)
     with open(filepath, 'rb') as f:
         return pickle.load(f)
 
+# Load lightweight feature names and TF-IDF transformer
+feature_names = load_pickle('feature_names.pkl')
+tfidf_transformer = load_pickle('tfidf_transformer.pkl')
 
-try:
-    cv = load_pickle('count_vectorizer.pkl')
-    tfidf_transformer = load_pickle('tfidf_transformer.pkl')
-    feature_names = load_pickle('feature_names.pkl')
-except FileNotFoundError as e:
-    print(e)
-    exit(1)  
+# Construct CountVectorizer directly from vocabulary to use only ~2MB RAM (Render free tier friendly!)
+vocabulary = {word: i for i, word in enumerate(feature_names)}
+cv = CountVectorizer(vocabulary=vocabulary)
 
-
-nltk.download('stopwords')
-nltk.download('punkt')
-nltk.download('wordnet')
-try:
-    nltk.download('punkt_tab', quiet=True)
-except Exception:
-    pass
+# Safe NLTK downloads
+for pkg in ['stopwords', 'punkt', 'wordnet', 'punkt_tab']:
+    try:
+        nltk.download(pkg, quiet=True)
+    except Exception:
+        pass
 
 stop_words = set(stopwords.words('english'))
 new_stop_words = ["fig", "figure", "image", "sample", "using",
@@ -47,22 +42,14 @@ new_stop_words = ["fig", "figure", "image", "sample", "using",
 stop_words = list(stop_words.union(new_stop_words))
 
 def preprocess_text(txt):
-   
     txt = txt.lower()
-    
     txt = re.sub(r"<.*?>", " ", txt)
-    
     txt = re.sub(r"[^a-zA-Z]", " ", txt)
-    
     txt = nltk.word_tokenize(txt)
-    
     txt = [word for word in txt if word not in stop_words]
-    
     txt = [word for word in txt if len(word) >= 3]
-    
     lmtr = WordNetLemmatizer()
     txt = [lmtr.lemmatize(word) for word in txt]
-
     return " ".join(txt)
 
 def sort_coo(coo_matrix):
@@ -80,6 +67,8 @@ def index():
 
 @app.route('/extract_keywords', methods=['POST'])
 def extract_keywords():
+    if 'file' not in request.files:
+        return render_template('index.html', error='No document selected')
     document = request.files['file']
     if not document.filename:
         return render_template('index.html', error='No document selected')
@@ -94,14 +83,13 @@ def extract_keywords():
 
 @app.route('/search_keywords', methods=['POST'])
 def search_keywords():
-    search_query = request.form['search']
+    search_query = request.form.get('search', '').strip()
     if search_query:
         keywords = [keyword for keyword in feature_names if search_query.lower() in keyword.lower()]
-        return render_template('keywordslist.html', keywords=keywords[:20])  # Limit to 20 keywords
+        return render_template('keywordslist.html', keywords=keywords[:20])
 
     return render_template('index.html')
 
 if __name__ == '__main__':
-    print("Current Directory:", os.getcwd())  
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
