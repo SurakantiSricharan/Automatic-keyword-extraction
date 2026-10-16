@@ -35,6 +35,10 @@ except FileNotFoundError as e:
 nltk.download('stopwords')
 nltk.download('punkt')
 nltk.download('wordnet')
+try:
+    nltk.download('punkt_tab', quiet=True)
+except Exception:
+    pass
 
 stop_words = set(stopwords.words('english'))
 new_stop_words = ["fig", "figure", "image", "sample", "using",
